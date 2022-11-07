@@ -9,6 +9,7 @@ interface IWord {
     position?: IPosition[];
     index?: number;
     direction?: string;
+    timeTry?: number;
 }
 
 class Config {
@@ -24,22 +25,25 @@ class Config {
 
 const CrossWordGenerator = ({
     words,
-    maxWord = 10,
+    maxWord = 100,
 }: {
     words: IWord[];
     maxWord?: number;
 }) => {
-    const shuffleWords: IWord[] = JSON.parse(JSON.stringify(words));
+    let shuffleWords: IWord[] = JSON.parse(JSON.stringify(words));
     shuffleArray(shuffleWords);
-    console.log(shuffleWords);
     let count = 1;
     let perfectGridSize = calculatePerfectGridSize(shuffleWords);
     if (perfectGridSize < 10) {
         perfectGridSize = 10;
     }
-    const matrix = initMatrix(perfectGridSize);
+    let matrix = initMatrix(perfectGridSize);
 
     let word = shuffleWords.pop();
+    shuffleWords = shuffleWords.map((w) => ({
+        ...w,
+        timeTry: shuffleWords.length,
+    }));
     let direction =
         Config.LIST_DIRECTIONS[
             Math.floor(Math.random() * Config.LIST_DIRECTIONS.length)
@@ -60,47 +64,148 @@ const CrossWordGenerator = ({
 
     while (maxWord > count && shuffleWords.length > 0) {
         let shouldBreak = false;
-        console.log(shuffleWords);
+        let placements = [];
         word = shuffleWords.pop();
-        for (let x = 0; x < perfectGridSize; x++) {
-            for (let y = 0; y < perfectGridSize; y++) {
-                const letter = matrix[x][y];
-                if (letter !== "." && word.value.indexOf(letter) >= 0) {
-                    const { result, placement } = canPlaceWord({
-                        word,
-                        words: words.filter((w) =>
-                            w.hasOwnProperty("direction")
-                        ),
-                        matrix,
-                        x,
-                        y,
-                    });
-                    if (result) {
-                        console.log(result, placement);
-                        count += 1;
-                        word = {
-                            ...word,
-                            position: placeWord({
-                                word: word.value,
-                                matrix,
-                                x: placement.x,
-                                y: placement.y,
-                                direction: placement.direction,
-                            }),
-                            index: count,
-                            direction: placement.direction,
-                        };
-                        replaceWord(words, word);
-                        shouldBreak = true;
-                        break;
+        for (
+            let letterIndex = 0;
+            letterIndex < word.value.length;
+            letterIndex++
+        ) {
+            for (let x = 0; x < perfectGridSize; x++) {
+                for (let y = 0; y < perfectGridSize; y++) {
+                    const letter = matrix[x][y];
+
+                    if (letter !== "." && word.value[letterIndex] === letter) {
+                        const { result, placement } = canPlaceWord({
+                            word,
+                            words: words.filter((w) =>
+                                w.hasOwnProperty("direction")
+                            ),
+                            matrix,
+                            x,
+                            y,
+                        });
+                        if (result) {
+                            placements.push(placement);
+                        }
                     }
                 }
             }
-            if (shouldBreak) break;
+        }
+
+        let bestScore = 0;
+        let bestBoard = [];
+        placements.forEach((placement) => {
+            const tempBoard = JSON.parse(JSON.stringify(matrix));
+            const tempPosition = placeWord({
+                word: word.value,
+                matrix: tempBoard,
+                x: placement.x,
+                y: placement.y,
+                direction: placement.direction,
+            });
+            const newScore = generateScore(tempBoard);
+
+            if (newScore > bestScore && newScore < 20) {
+                bestBoard = JSON.parse(JSON.stringify(tempBoard));
+                bestScore = newScore;
+                word = {
+                    ...word,
+                    position: tempPosition,
+                    direction: placement.direction,
+                };
+            }
+        });
+
+        if (bestScore > 0) {
+            console.log(bestScore);
+            matrix = JSON.parse(JSON.stringify(bestBoard));
+            count += 1;
+            word = {
+                ...word,
+                index: count,
+            };
+            replaceWord(words, word);
+            shouldBreak = true;
+        }
+
+        if (!shouldBreak && word.timeTry > 0) {
+            console.log(`try word: ${word.value} - ${word.timeTry - 1} times`);
+            word = {
+                ...word,
+                timeTry: word.timeTry - 1,
+            };
+            shuffleWords.unshift(word);
         }
     }
 
-    console.table(matrix);
+    let maxIndex = 0;
+    words.forEach((w) => {
+        if (w.index > maxIndex) maxIndex = w.index;
+    });
+    const { cropMatrix, minRow, maxRow, minCol, maxCol } =
+        cropSizeOfMatrixWord(matrix);
+
+    console.log(`Words count: ${words.length}, maxIndex: ${maxIndex}`);
+    console.table(cropMatrix);
+};
+
+const cropSizeOfMatrixWord = (matrix: string[][]) => {
+    const gridSize = matrix.length;
+    let minRow = gridSize,
+        minCol = gridSize;
+    let maxRow = 0,
+        maxCol = 0;
+
+    matrix.forEach((row, rowIndex) => {
+        row.forEach((letter, colIndex) => {
+            if (letter !== ".") {
+                if (rowIndex < minRow) minRow = rowIndex;
+                if (rowIndex > maxRow) maxRow = rowIndex;
+                if (colIndex < minCol) minCol = colIndex;
+                if (colIndex > maxCol) maxCol = colIndex;
+            }
+        });
+    });
+
+    return {
+        cropMatrix: matrix
+            .slice(minRow, maxRow + 1)
+            .map((col) => col.slice(minCol, maxCol + 1)),
+        minRow,
+        maxRow,
+        minCol,
+        maxCol,
+    };
+};
+
+const generateScore = (matrix: string[][]) => {
+    const { cropMatrix, minRow, maxRow, minCol, maxCol } =
+        cropSizeOfMatrixWord(matrix);
+    const rowCropMatrix = cropMatrix.length;
+    const colCropMatrix = cropMatrix[0].length;
+    let filled = 0,
+        empty = 0;
+    let sizeRatio = rowCropMatrix / colCropMatrix;
+    if (rowCropMatrix > colCropMatrix) {
+        sizeRatio = colCropMatrix / rowCropMatrix;
+    }
+
+    cropMatrix.forEach((row, rowIndex) => {
+        row.forEach((letter, colIndex) => {
+            if (!letter || letter === ".") {
+                empty += 1;
+            } else {
+                filled += 1;
+            }
+        });
+    });
+
+    if (empty === 0) empty = 1;
+    if (filled === 0) filled = 1;
+    let filledRatio = filled / empty;
+
+    return sizeRatio * 10 + filledRatio * 2;
 };
 
 const shuffleArray = (array: any[]) => {
@@ -141,6 +246,7 @@ const replaceWord = (words: IWord[], word: IWord) => {
     const index = words.findIndex((w) => w.value === word.value);
 
     if (index >= 0) {
+        delete word.timeTry;
         words[index] = word;
     }
 };
@@ -187,22 +293,26 @@ const canPlaceWord = ({
     x: number;
     y: number;
 }) => {
-    let direction;
-    let result = true;
-    let newX = -1;
-    let newY = -1;
-    words.every((w) => {
-        w.position.every((p) => {
-            if (p.col === x && p.row === y) {
-                direction = w.direction;
-                return false;
+    let direction,
+        result = true,
+        newX = -1,
+        newY = -1;
+    for (let wordIndex = 0; wordIndex < words.length; wordIndex++) {
+        let shouldBreak = false;
+        for (
+            let positionIndex = 0;
+            positionIndex < words[wordIndex].position.length;
+            positionIndex++
+        ) {
+            const currentPosition = words[wordIndex].position[positionIndex];
+            if (currentPosition.row == x && currentPosition.col == y) {
+                direction = words[wordIndex].direction;
+                shouldBreak = true;
+                break;
             }
-            return true;
-        });
-        if (direction) return false;
-
-        return true;
-    });
+        }
+        if (shouldBreak) break;
+    }
 
     if (direction) {
         direction =
@@ -251,17 +361,13 @@ const canPlaceWord = ({
 CrossWordGenerator({
     words: [
         {
-            value: "test",
-            hint: "no hint",
-        },
-        {
             value: "hat",
             hint: "no hint",
         },
-        // {
-        //     value: "notfound",
-        //     hint: "no hint",
-        // },
+        {
+            value: "notfound",
+            hint: "no hint",
+        },
         {
             value: "chicken",
             hint: "no hint",
@@ -272,6 +378,38 @@ CrossWordGenerator({
         },
         {
             value: "cat",
+            hint: "no hint",
+        },
+        {
+            value: "boundary",
+            hint: "no hint",
+        },
+        {
+            value: "available",
+            hint: "no hint",
+        },
+        {
+            value: "strive",
+            hint: "no hint",
+        },
+        {
+            value: "loutish",
+            hint: "no hint",
+        },
+        {
+            value: "meaty",
+            hint: "no hint",
+        },
+        {
+            value: "test",
+            hint: "no hint",
+        },
+        {
+            value: "user",
+            hint: "no hint",
+        },
+        {
+            value: "lion",
             hint: "no hint",
         },
     ],
