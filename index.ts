@@ -1,3 +1,4 @@
+const fs = require("fs");
 interface IPosition {
     row: number;
     col: number;
@@ -7,6 +8,7 @@ interface IWord {
     value: string;
     hint: string;
     position?: IPosition[];
+    firstPosition?: IPosition;
     index?: number;
     direction?: string;
     timeTry?: number;
@@ -30,7 +32,7 @@ const CrossWordGenerator = ({
     words: IWord[];
     maxWord?: number;
 }) => {
-    let shuffleWords: IWord[] = JSON.parse(JSON.stringify(words));
+    let shuffleWords: IWord[] = JSON.parse(JSON.stringify(formatWords(words)));
     shuffleArray(shuffleWords);
     let count = 1;
     let perfectGridSize = calculatePerfectGridSize(shuffleWords);
@@ -118,7 +120,6 @@ const CrossWordGenerator = ({
         });
 
         if (bestScore > 0) {
-            console.log(bestScore);
             matrix = JSON.parse(JSON.stringify(bestBoard));
             count += 1;
             word = {
@@ -146,8 +147,72 @@ const CrossWordGenerator = ({
     const { cropMatrix, minRow, maxRow, minCol, maxCol } =
         cropSizeOfMatrixWord(matrix);
 
+    words.sort((a, b) => a.index - b.index);
+
+    for (let index = 0; index < words.length; index++) {
+        words[index].position = words[index].position.map((p) => ({
+            row: p.row - minRow,
+            col: p.col - minCol,
+        }));
+    }
+
+    for (let index = 0; index < words.length; index++) {
+        words[index].firstPosition = words[index].position[0];
+        delete words[index].position;
+    }
+
+    fs.writeFile("result.json", JSON.stringify(words), function (err) {
+        if (err) throw err;
+    });
     console.log(`Words count: ${words.length}, maxIndex: ${maxIndex}`);
-    console.table(cropMatrix);
+    console.table(
+        cropMatrix.map((row, rowIndex) =>
+            row.map((c, columnIndex) => {
+                if (c !== ".") {
+                    let word = words.find(
+                        (w) =>
+                            w.firstPosition.row === rowIndex &&
+                            w.firstPosition.col === columnIndex
+                    );
+                    if (word) {
+                        return word.index;
+                    }
+
+                    return "*";
+                }
+
+                return "";
+            })
+        )
+    );
+
+    console.log("DOWN");
+    words.forEach((w) => {
+        if (w.direction === Config.VERTICAL) {
+            console.log(
+                `${w.index}. ${
+                    w.hint.charAt(0).toUpperCase() + w.hint.slice(1)
+                }.`
+            );
+        }
+    });
+    console.log("ACROSS");
+    words.forEach((w) => {
+        if (w.direction === Config.HORIZONTAL) {
+            console.log(
+                `${w.index}. ${
+                    w.hint.charAt(0).toUpperCase() + w.hint.slice(1)
+                }.`
+            );
+        }
+    });
+};
+
+const formatWords = (words: IWord[]) => {
+    return words.map((w) => ({
+        ...w,
+        value: w.value.split(" ").join(""),
+    }));
 };
 
 const cropSizeOfMatrixWord = (matrix: string[][]) => {
@@ -358,59 +423,61 @@ const canPlaceWord = ({
     };
 };
 
-CrossWordGenerator({
-    words: [
-        {
-            value: "hat",
-            hint: "no hint",
-        },
-        {
-            value: "notfound",
-            hint: "no hint",
-        },
-        {
-            value: "chicken",
-            hint: "no hint",
-        },
-        {
-            value: "monkey",
-            hint: "no hint",
-        },
-        {
-            value: "cat",
-            hint: "no hint",
-        },
-        {
-            value: "boundary",
-            hint: "no hint",
-        },
-        {
-            value: "available",
-            hint: "no hint",
-        },
-        {
-            value: "strive",
-            hint: "no hint",
-        },
-        {
-            value: "loutish",
-            hint: "no hint",
-        },
-        {
-            value: "meaty",
-            hint: "no hint",
-        },
-        {
-            value: "test",
-            hint: "no hint",
-        },
-        {
-            value: "user",
-            hint: "no hint",
-        },
-        {
-            value: "lion",
-            hint: "no hint",
-        },
-    ],
-});
+for (let index = 0; index < 1; index++) {
+    CrossWordGenerator({
+        words: [
+            {
+                value: "freshwater",
+                hint: "living in water that does not contain salt",
+            },
+            {
+                value: "furred",
+                hint: "covered with fur, or covered with something that looks like fur",
+            },
+            {
+                value: "giant",
+                hint: "used in the names of some animals and plants that are much larger than others of the same type",
+            },
+            {
+                value: "rabid",
+                hint: "a rabid animal has rabies",
+            },
+            {
+                value: "temperate",
+                hint: "used about plants and animals that live in temperate areas",
+            },
+            {
+                value: "territorial",
+                hint: "territorial animals or people do not like other animals or people entering an area that they believe belongs to them",
+            },
+            {
+                value: "wild",
+                hint: "a wild animal or plant lives or grows on its own in natural conditions and is not raised by humans",
+            },
+            {
+                value: "wildness",
+                hint: "the quality of an animal or plant that is not raised by humans",
+            },
+            {
+                value: "winged",
+                hint: "a winged creature has wings",
+            },
+            {
+                value: "threatened",
+                hint: "likely to become an endangered species",
+            },
+            {
+                value: "tame",
+                hint: "a tame animal has been trained to stay calm when people are near it, because it is used to being with them",
+            },
+            {
+                value: "social",
+                hint: "social animals live in groups instead of living alone",
+            },
+            {
+                value: "shy",
+                hint: "a shy animal is afraid of people and tries to hide from them",
+            },
+        ],
+    });
+}
